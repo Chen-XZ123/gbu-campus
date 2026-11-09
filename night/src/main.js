@@ -13,7 +13,9 @@ let ready=false,game,world,demo=null,mode='title',quality='Smooth',sound=true,ma
 let renderScale=.8,last=0,accumulator=0,uiClock=0,adaptClock=0,elapsed=0,freeze=false,reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let fps=60,frames=[],frameMetrics={mean:16.7,p95:16.7},drag=null,stepBob=0,qualityWarmup=8;
 const key=new Set(),touch={x:0,z:0,interact:false,run:false},lookVector=new THREE.Vector3(),moonColor=new THREE.Color(0xa9cfdf);
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x172c3d);scene.fog=new THREE.Fog(0x243b47,80,355);
+// Gameplay relies on the flashlight; keep the title preview readable.
+const NIGHT={sky:0x020408,fog:0x030609,near:8,far:48,ambient:.035,moon:.025};
+const scene=new THREE.Scene();scene.background=new THREE.Color(NIGHT.sky);scene.fog=new THREE.Fog(NIGHT.fog,NIGHT.near,NIGHT.far);
 const camera=new THREE.PerspectiveCamera(67,innerWidth/innerHeight,.08,600);camera.rotation.order='YXZ';scene.add(camera);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance',alpha:false});
 renderer.setClearColor(0x172c3d);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.18;
@@ -21,7 +23,7 @@ renderer.shadowMap.enabled=false;renderer.setPixelRatio(renderScale);renderer.se
 renderer.domElement.setAttribute('aria-label','Three-dimensional haunted campus. Drag to look; WASD to walk, Shift to sprint, Space to kick.');renderer.domElement.tabIndex=0;
 const hemi=new THREE.HemisphereLight(0xbadce8,0x41544a,2.15);scene.add(hemi);
 const moon=new THREE.DirectionalLight(moonColor,2.0);moon.position.set(-38,58,-25);scene.add(moon);
-const torch=new THREE.SpotLight(0xffe3ac,45,31,.52,.6,1.1);scene.add(torch,torch.target);
+const torch=new THREE.SpotLight(0xffe3ac,75,26,.43,.65,1.1);scene.add(torch,torch.target);
 const moonMesh=new THREE.Mesh(new THREE.SphereGeometry(3.6,20,12),new THREE.MeshBasicMaterial({color:0xe4eee1,fog:false}));moonMesh.position.set(-78,95,-142);scene.add(moonMesh);
 const ghostVisual=new THREE.Group();scene.add(ghostVisual);
 const robeMat=new THREE.MeshStandardMaterial({color:0x82949a,emissive:0x1e4249,emissiveIntensity:.4,roughness:.95,side:THREE.DoubleSide});
@@ -42,7 +44,7 @@ const bellVisual=new THREE.Mesh(new THREE.OctahedronGeometry(.22),new THREE.Mesh
 const zombieVisuals=createZombieVisuals(scene,camera);
 
 function clearInput(){key.clear();touch.x=0;touch.z=0;touch.interact=false;touch.run=false;drag=null;}
-function begin(isDemo=false,keep=false){if(!ready)return;audio.stopSession();audio.beginSession();clearInput();game.reset(keep);demo=isDemo?new DemoPlayer(game,{portrait:innerWidth/innerHeight<.8}):null;mode='playing';mapOpen=false;freeze=false;qualityWarmup=4;hemi.intensity=2.15;scene.background.set(0x172c3d);scene.fog.color.set(0x243b47);updateUI();}
+function begin(isDemo=false,keep=false){if(!ready)return;audio.stopSession();audio.beginSession();clearInput();game.reset(keep);demo=isDemo?new DemoPlayer(game,{portrait:innerWidth/innerHeight<.8}):null;mode='playing';mapOpen=false;freeze=false;qualityWarmup=4;hemi.intensity=NIGHT.ambient;moon.intensity=NIGHT.moon;scene.background.set(NIGHT.sky);scene.fog.color.set(NIGHT.fog);scene.fog.near=NIGHT.near;scene.fog.far=NIGHT.far;updateUI();}
 function pause(){if(mode==='playing'){mapOpen=false;mode='paused';game.mode='paused';audio.setPaused(true);clearInput();updateUI();}else if(mode==='paused')resume();}
 function resume(){if(mode!=='paused')return;mode='playing';game.mode='playing';clearInput();updateUI();audio.beginSession();audio.setPaused(false);}
 function toggleMap(){if(mode!=='playing')return;mapOpen=!mapOpen;clearInput();accumulator=0;audio.setPaused(mapOpen);updateUI();}
@@ -83,7 +85,7 @@ function updateUI(){
 }
 function updateView(dt){
   if(mode==='title'){
-    camera.position.set(...(innerWidth<700?[150,165,300]:[127,88,160]));camera.lookAt(0,4,0);torch.visible=false;ghostVisual.visible=false;
+    hemi.intensity=2.15;moon.intensity=2.0;scene.background.set(0x172c3d);scene.fog.color.set(0x243b47);scene.fog.near=80;scene.fog.far=355;camera.position.set(...(innerWidth<700?[150,165,300]:[127,88,160]));camera.lookAt(0,4,0);torch.visible=false;ghostVisual.visible=false;
   }else if(game){
     const g=game,p=g.player;stepBob+=dt*(g.running?11:7);const bob=!reducedMotion&&g.moving&&mode==='playing'?Math.sin(stepBob)*.025:0;
     const recoil=!reducedMotion?g.biteFlash*g.biteFlash:0,impact=!reducedMotion?g.kickImpact/.32:0;
@@ -91,7 +93,7 @@ function updateView(dt){
     const targetFov=(g.running&&!reducedMotion?71:67)+impact*4;if(Math.abs(camera.fov-targetFov)>.015){camera.fov+=(targetFov-camera.fov)*(1-Math.exp(-10*dt));camera.updateProjectionMatrix();}
     camera.getWorldDirection(lookVector);torch.position.copy(camera.position);torch.position.y-=.15;torch.target.position.copy(camera.position).addScaledVector(lookVector,15);torch.visible=g.torch&&g.battery>0;
     let closestStudent=20;for(const student of g.zombies)closestStudent=Math.min(closestStudent,distance(p,student));
-    torch.intensity=10+35*clamp((closestStudent-1.2)/5,0,1);
+    torch.intensity=18+57*clamp((closestStudent-1.2)/5,0,1);
     ghostVisual.visible=g.ghost.visible;ghostVisual.position.set(g.ghost.x,Math.sin(elapsed*1.4)*.12,g.ghost.z);ghostVisual.rotation.y=g.ghost.yaw;
     for(let i=0;i<robePositions.count;i++){const h=baseRobe[i*3+1];robePositions.setX(i,baseRobe[i*3]+Math.sin(elapsed*2.1+h*2.2)*.055*(1.5-h));robePositions.setZ(i,baseRobe[i*3+2]+Math.cos(elapsed*1.7+h*2.7)*.06*(1.5-h));}robePositions.needsUpdate=true;
     robeMat.emissiveIntensity=.4+g.ghost.stun*.9;
